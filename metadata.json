@@ -1,0 +1,9 @@
+{
+  "name": "Copy of Crisis Response Intelligence System (CRIS)",
+  "description": "A lightweight web application that collects multimodal crisis inputs (text, documents, images, and voice notes) and uses the Gemini API to generate a structured, high-stakes crisis action plan.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}

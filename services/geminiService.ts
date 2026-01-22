@@ -5,7 +5,8 @@ import { CrisisActionPlan, MultimodalInput, GroundingLink } from "../types";
 const SYSTEM_INSTRUCTION = `You are an expert Crisis Management Coordinator. 
 Analyze multimodal inputs (text, images, audio, docs) and provide a structured Crisis Action Plan.
 
-Your response MUST be a single JSON object. Do not include markdown formatting like \`\`\`json. 
+Your response MUST be a single, valid JSON object. 
+Do not include any introductory text, and do not use markdown code blocks like \`\`\`json.
 
 Schema:
 {
@@ -20,44 +21,81 @@ Schema:
 }`;
 
 export const generateCrisisPlan = async (inputs: MultimodalInput[]): Promise<CrisisActionPlan> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Access API key safely
+  const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
+  
+  if (!apiKey) {
+    throw new Error("API_KEY is not defined in the environment.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+  
+  // Extract coordinates for toolConfig if present in text inputs
+  let latitude: number | undefined;
+  let longitude: number | undefined;
   
   const parts = inputs.map(input => {
-    if (input.type === 'text') return { text: input.data };
+    if (input.type === 'text') {
+      // Regex to find "lat, lng" in the generated CRISIS REPORT string
+      const coordMatch = input.data.match(/(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+      if (coordMatch) {
+        latitude = parseFloat(coordMatch[1]);
+        longitude = parseFloat(coordMatch[2]);
+      }
+      return { text: input.data };
+    }
+    
+    // For non-text inputs, extract base64 data correctly from DataURLs
+    const dataParts = input.data.split(',');
+    const base64Data = dataParts.length > 1 ? dataParts[1] : dataParts[0];
+    
     return {
       inlineData: {
-        data: input.data.split(',')[1],
+        data: base64Data,
         mimeType: input.mimeType || 'application/octet-stream'
       }
     };
   });
 
-  parts.push({ text: "Generate the Crisis Action Plan JSON now. Ensure it is valid JSON and follows the schema provided in the system instructions." });
+  parts.push({ text: "Produce the JSON Crisis Action Plan now based on all provided evidence and instructions." });
+
+  const config: any = {
+    systemInstruction: SYSTEM_INSTRUCTION,
+    tools: [{ googleSearch: {} }, { googleMaps: {} }],
+  };
+
+  // Maps grounding works best with explicit coordinates in toolConfig
+  if (latitude !== undefined && longitude !== undefined) {
+    config.toolConfig = {
+      retrievalConfig: {
+        latLng: {
+          latitude,
+          longitude
+        }
+      }
+    };
+  }
 
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash",
     contents: [{ parts }],
-    config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
-      // Note: responseMimeType is NOT allowed when using googleMaps tool.
-      tools: [{ googleSearch: {} }, { googleMaps: {} }]
-    }
+    config: config
   });
 
   const text = response.text || "";
   
-  // Robust JSON extraction
+  // Extract JSON using a more resilient method
   let plan: CrisisActionPlan;
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     const jsonStr = jsonMatch ? jsonMatch[0] : text;
     plan = JSON.parse(jsonStr);
   } catch (e) {
-    console.error("Failed to parse Gemini response as JSON", text);
-    throw new Error("The AI response was not in the expected format. Please try again.");
+    console.error("Failed to parse Gemini response as JSON. Raw text:", text);
+    throw new Error("Reasoning failed: The AI response was not in a valid format.");
   }
 
-  // Extract grounding links if available
+  // Extract grounding metadata for UI display
   const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
   if (groundingChunks) {
     const links: GroundingLink[] = groundingChunks.map((chunk: any) => {

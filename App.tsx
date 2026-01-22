@@ -38,7 +38,7 @@ const App: React.FC = () => {
       (error) => {
         console.error("Error detecting location", error);
         setIsDetectingLocation(false);
-        alert("Unable to retrieve location.");
+        alert("Unable to retrieve location. Please type it manually.");
       }
     );
   };
@@ -86,9 +86,9 @@ const App: React.FC = () => {
       const result = await generateCrisisPlan(finalInputs);
       setPlan(result);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (error) {
-      console.error(error);
-      alert("An error occurred during reasoning. Please check your API key and input details.");
+    } catch (error: any) {
+      console.error("Crisis Reasoning Error:", error);
+      alert(`Reasoning Error: ${error.message || "Unknown error"}. Check console for details.`);
     } finally {
       setIsProcessing(false);
     }
@@ -141,7 +141,7 @@ const App: React.FC = () => {
   return (
     <main className="max-w-4xl mx-auto px-4 py-12">
       <header className="text-center mb-12">
-        <h1 className="text-5xl font-black text-slate-900 tracking-tight mb-4">CRIS</h1>
+        <h1 className="text-5xl font-black text-slate-900 tracking-tight mb-4 text-transparent bg-clip-text bg-gradient-to-br from-indigo-600 to-slate-900">CRIS</h1>
         <p className="text-xl text-slate-500 font-light">Crisis Response Intelligence System</p>
       </header>
 
@@ -228,7 +228,7 @@ const App: React.FC = () => {
                   <button 
                     type="button"
                     onClick={() => removeInput(idx)}
-                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity z-10"
                   >
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

@@ -12,6 +12,11 @@ export interface ActionItem {
   urgency: 'IMMEDIATE' | 'FOLLOW-UP';
 }
 
+export interface GroundingLink {
+  title: string;
+  uri: string;
+}
+
 export interface CrisisActionPlan {
   title: string;
   severity: SeverityLevel;
@@ -24,6 +29,7 @@ export interface CrisisActionPlan {
     external: string;
   };
   longTermRecovery: string[];
+  groundingLinks?: GroundingLink[];
 }
 
 export interface MultimodalInput {

@@ -31,153 +31,241 @@ const App: React.FC = () => {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
-        const locString = `Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+        const locString = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
         handleSituationChange('location', locString);
         setIsDetectingLocation(false);
       },
       (error) => {
-        console.error("Error detecting location:", error);
-        let msg = "Could not detect location.";
-        if (error.code === error.PERMISSION_DENIED) msg = "Location permission denied.";
-        alert(msg);
+        console.error("Error detecting location", error);
         setIsDetectingLocation(false);
-      },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        alert("Unable to retrieve location.");
+      }
     );
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'document') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-    Array.from(files).forEach((file: File) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const type = file.type.startsWith('image/') ? 'image' : 'document';
-        setInputs(prev => [...prev, {
-          type,
-          data: reader.result as string,
-          mimeType: file.type,
-          fileName: file.name
-        }]);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const newInput: MultimodalInput = {
+        type,
+        data: reader.result as string,
+        mimeType: file.type,
+        fileName: file.name
       };
-      reader.readAsDataURL(file);
-    });
+      setInputs(prev => [...prev, newInput]);
+    };
+    reader.readAsDataURL(file);
   };
 
-  const addVoiceNote = (base64: string, mimeType: string) => {
-    setInputs(prev => [...prev, {
-      type: 'audio',
-      data: base64,
-      mimeType,
-      fileName: `voice-note-${Date.now()}.webm`
-    }]);
+  const addVoiceNote = (data: string, mimeType: string) => {
+    setInputs(prev => [...prev, { type: 'audio', data, mimeType, fileName: 'Voice Note' }]);
   };
 
   const removeInput = (index: number) => {
     setInputs(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleGenerate = async () => {
-    const hasText = Object.values(situation).some(val => val.trim().length > 0);
-    if (!hasText && inputs.length === 0) {
-      alert("Please provide some crisis details or upload evidence.");
-      return;
-    }
-
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setIsProcessing(true);
-    setPlan(null);
-    try {
-      const allInputs: MultimodalInput[] = [...inputs];
-      
-      const situationSummary = [
-        situation.event && `WHAT HAPPENED: ${situation.event}`,
-        situation.location && `LOCATION: ${situation.location}`,
-        situation.people && `WHO IS INVOLVED: ${situation.people}`,
-        situation.status && `CURRENT STATUS: ${situation.status}`
-      ].filter(Boolean).join('\n');
 
-      if (situationSummary) {
-        allInputs.push({ type: 'text', data: situationSummary });
-      }
-      
-      const result = await generateCrisisPlan(allInputs);
+    try {
+      const textInput: MultimodalInput = {
+        type: 'text',
+        data: `CRISIS REPORT:
+        Event: ${situation.event}
+        Location: ${situation.location}
+        Personnel/Population Involved: ${situation.people}
+        Current Status/Threat: ${situation.status}`
+      };
+
+      const finalInputs = [textInput, ...inputs];
+      const result = await generateCrisisPlan(finalInputs);
       setPlan(result);
-    } catch (err) {
-      console.error("Failed to generate plan:", err);
-      alert("Error generating plan. Please try again.");
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (error) {
+      console.error(error);
+      alert("An error occurred during reasoning. Please check your API key and input details.");
     } finally {
       setIsProcessing(false);
     }
   };
 
   const resetForm = () => {
-    setInputs([]);
-    setSituation({
-      event: '',
-      location: '',
-      people: '',
-      status: ''
-    });
     setPlan(null);
+    setInputs([]);
+    setSituation({ event: '', location: '', people: '', status: '' });
   };
 
-  return (
-    <div className="max-w-6xl mx-auto px-4 py-12">
-      <header className="mb-12 text-center">
-        <div className="inline-flex items-center justify-center p-3 bg-red-600 rounded-2xl shadow-xl shadow-red-200 mb-6">
-          <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
+  if (plan) {
+    return (
+      <main className="max-w-5xl mx-auto px-4 py-8">
+        <div className="mb-6 flex justify-between items-center">
+          <button 
+            onClick={resetForm}
+            className="text-slate-500 hover:text-slate-800 flex items-center gap-2 font-medium"
+          >
+            ← Generate New Plan
+          </button>
+          <div className="flex items-center gap-2 text-indigo-600 font-bold">
+            <div className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></div>
+            CRIS LIVE INTELLIGENCE
+          </div>
         </div>
-        <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 mb-2 uppercase italic">CRIS</h1>
-        <p className="text-lg text-slate-500 font-medium">Crisis Response Intelligence System</p>
+        <ActionPlanDisplay plan={plan} />
+        {plan.groundingLinks && plan.groundingLinks.length > 0 && (
+          <div className="mt-8 pt-8 border-t border-slate-200">
+            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-widest mb-4">Verification Sources & Context</h3>
+            <div className="flex flex-wrap gap-3">
+              {plan.groundingLinks.map((link, i) => (
+                <a 
+                  key={i} 
+                  href={link.uri} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-full text-xs text-indigo-600 hover:bg-indigo-50 transition-colors shadow-sm"
+                >
+                  {link.title}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+    );
+  }
+
+  return (
+    <main className="max-w-4xl mx-auto px-4 py-12">
+      <header className="text-center mb-12">
+        <h1 className="text-5xl font-black text-slate-900 tracking-tight mb-4">CRIS</h1>
+        <p className="text-xl text-slate-500 font-light">Crisis Response Intelligence System</p>
       </header>
 
-      {!plan ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-          <div className="lg:col-span-2 space-y-8">
-            {/* Input Section */}
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200">
-              <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-3">
-                <span className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center text-sm">1</span>
-                Situation Details
-              </h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-700 uppercase tracking-tight">What happened?</label>
-                  <textarea
-                    value={situation.event}
-                    onChange={(e) => handleSituationChange('event', e.target.value)}
-                    placeholder="Brief description of the incident..."
-                    className="w-full h-24 p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all outline-none resize-none text-slate-800"
-                  />
+      <form onSubmit={handleSubmit} className="space-y-8 bg-white p-8 rounded-2xl shadow-xl border border-slate-100">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-slate-700 uppercase tracking-wide">Crisis Event</label>
+            <input
+              required
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+              placeholder="e.g., Flash Flood, Structural Fire"
+              value={situation.event}
+              onChange={(e) => handleSituationChange('event', e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-slate-700 uppercase tracking-wide flex justify-between">
+              Location
+              <button 
+                type="button"
+                onClick={detectLocation}
+                disabled={isDetectingLocation}
+                className="text-indigo-600 hover:text-indigo-800 text-xs normal-case font-medium"
+              >
+                {isDetectingLocation ? 'Detecting...' : 'Detect Current Location'}
+              </button>
+            </label>
+            <input
+              required
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+              placeholder="Address or Coordinates"
+              value={situation.location}
+              onChange={(e) => handleSituationChange('location', e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-slate-700 uppercase tracking-wide">Involved Parties</label>
+            <input
+              required
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+              placeholder="e.g., 50 residents, 12 staff"
+              value={situation.people}
+              onChange={(e) => handleSituationChange('people', e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-bold text-slate-700 uppercase tracking-wide">Status / Immediate Threat</label>
+            <input
+              required
+              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+              placeholder="Current risk level"
+              value={situation.status}
+              onChange={(e) => handleSituationChange('status', e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-4 pt-6 border-t border-slate-100">
+          <h3 className="text-lg font-bold text-slate-800">Field Evidence (Multimodal)</h3>
+          <div className="flex flex-wrap gap-4">
+            <VoiceRecorder onRecordingComplete={addVoiceNote} />
+            
+            <label className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg cursor-pointer transition-colors shadow-sm">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              Upload Image
+              <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'image')} />
+            </label>
+
+            <label className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg cursor-pointer transition-colors shadow-sm">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Attach Document
+              <input type="file" accept=".pdf,.doc,.docx,.txt" className="hidden" onChange={(e) => handleFileUpload(e, 'document')} />
+            </label>
+          </div>
+
+          {inputs.length > 0 && (
+            <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {inputs.map((input, idx) => (
+                <div key={idx} className="relative group p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                  <button 
+                    type="button"
+                    onClick={() => removeInput(idx)}
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                  <div className="uppercase font-bold text-[10px] text-slate-400 mb-1">{input.type}</div>
+                  <div className="truncate text-slate-700">{input.fileName || "Input Data"}</div>
                 </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="text-sm font-bold text-slate-700 uppercase tracking-tight">Where?</label>
-                    <button 
-                      onClick={detectLocation}
-                      disabled={isDetectingLocation}
-                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 uppercase flex items-center gap-1 transition-colors disabled:opacity-50"
-                    >
-                      {isDetectingLocation ? (
-                        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                      ) : (
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                      )}
-                      {isDetectingLocation ? 'Detecting...' : 'Detect Location'}
-                    </button>
-                  </div>
-                  <textarea
-                    value={situation.location}
-                    onChange={(e) => handleSituationChange('location', e.target.value)}
-                    placeholder="Specific location or coordinates..."
-                    className="w-full h-24 p-4 bg-slate-
+              ))}
+            </div>
+          )}
+        </div>
+
+        <button
+          type="submit"
+          disabled={isProcessing}
+          className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl font-bold text-lg shadow-lg shadow-indigo-200 transition-all transform active:scale-[0.98] flex items-center justify-center gap-3"
+        >
+          {isProcessing ? (
+            <>
+              <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Synthesizing Protocol...
+            </>
+          ) : (
+            'Generate Crisis Action Plan'
+          )}
+        </button>
+      </form>
+
+      <footer className="mt-12 text-center text-slate-400 text-sm">
+        <p>© 2025 CRIS Framework. For professional emergency management use only.</p>
+      </footer>
+    </main>
+  );
+};
+
+export default App;

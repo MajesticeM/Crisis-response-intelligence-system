@@ -21,14 +21,8 @@ Schema:
 }`;
 
 export const generateCrisisPlan = async (inputs: MultimodalInput[]): Promise<CrisisActionPlan> => {
-  // Access API key safely
-  const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
-  
-  if (!apiKey) {
-    throw new Error("API_KEY is not defined in the environment.");
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
+  // Use process.env.API_KEY directly as per requirements.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   // Extract coordinates for toolConfig if present in text inputs
   let latitude: number | undefined;
@@ -36,7 +30,6 @@ export const generateCrisisPlan = async (inputs: MultimodalInput[]): Promise<Cri
   
   const parts = inputs.map(input => {
     if (input.type === 'text') {
-      // Regex to find "lat, lng" in the generated CRISIS REPORT string
       const coordMatch = input.data.match(/(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
       if (coordMatch) {
         latitude = parseFloat(coordMatch[1]);
@@ -45,7 +38,6 @@ export const generateCrisisPlan = async (inputs: MultimodalInput[]): Promise<Cri
       return { text: input.data };
     }
     
-    // For non-text inputs, extract base64 data correctly from DataURLs
     const dataParts = input.data.split(',');
     const base64Data = dataParts.length > 1 ? dataParts[1] : dataParts[0];
     
@@ -57,14 +49,13 @@ export const generateCrisisPlan = async (inputs: MultimodalInput[]): Promise<Cri
     };
   });
 
-  parts.push({ text: "Produce the JSON Crisis Action Plan now based on all provided evidence and instructions." });
+  parts.push({ text: "Generate the Crisis Action Plan in JSON format immediately." });
 
   const config: any = {
     systemInstruction: SYSTEM_INSTRUCTION,
     tools: [{ googleSearch: {} }, { googleMaps: {} }],
   };
 
-  // Maps grounding works best with explicit coordinates in toolConfig
   if (latitude !== undefined && longitude !== undefined) {
     config.toolConfig = {
       retrievalConfig: {
@@ -84,7 +75,6 @@ export const generateCrisisPlan = async (inputs: MultimodalInput[]): Promise<Cri
 
   const text = response.text || "";
   
-  // Extract JSON using a more resilient method
   let plan: CrisisActionPlan;
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -92,10 +82,9 @@ export const generateCrisisPlan = async (inputs: MultimodalInput[]): Promise<Cri
     plan = JSON.parse(jsonStr);
   } catch (e) {
     console.error("Failed to parse Gemini response as JSON. Raw text:", text);
-    throw new Error("Reasoning failed: The AI response was not in a valid format.");
+    throw new Error("Reasoning failed: The AI response was not in a valid format. Try again.");
   }
 
-  // Extract grounding metadata for UI display
   const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
   if (groundingChunks) {
     const links: GroundingLink[] = groundingChunks.map((chunk: any) => {
